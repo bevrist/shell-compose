@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 func main() {
@@ -18,19 +19,23 @@ func main() {
 	fmt.Printf("%#v", argsCmd)
 	// cmd := exec.Command(argsCmd[0], argsCmd[1:]...)
 	ctx, cancel := context.WithCancel(context.Background())
-	cmd := exec.CommandContext(ctx, argsCmd[0], argsCmd[1:]...)
-	var out bytes.Buffer
-	var stderr bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = &stderr
-	err := cmd.Run()
-	println(cmd.ProcessState.ExitCode())
-	if err != nil {
-		println(stderr.String())
-	}
-	fmt.Println(string(out.String()))
+	go func() {
+		cmd := exec.CommandContext(ctx, argsCmd[0], argsCmd[1:]...)
+		var out bytes.Buffer
+		var stderr bytes.Buffer
+		cmd.Stdout = &out
+		cmd.Stderr = &stderr
+		err := cmd.Run()
+		println(cmd.ProcessState.ExitCode())
+		if err != nil {
+			println(stderr.String())
+		}
+		fmt.Println(string(out.String()))
+	}()
 
-	cancel() //cancel running command
+	time.Sleep(2 * time.Second)
+	cancel() //cancel async running command
+	//INFO context not needed
 
 	// fmt.Println(formatter.NextColor() + "asdasd" + formatter.ResetColor() + "3123" + formatter.NextColor() + "asdasd" + formatter.ResetColor())
 }
