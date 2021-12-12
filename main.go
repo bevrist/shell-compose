@@ -13,12 +13,13 @@ import (
 func main() {
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
-	var terminating bool = false
 	go func() {
+		var terminating bool = false
 		for range c {
 			if !terminating {
 				fmt.Println("Gracefully stopping... (press Ctrl+C again to force)")
 				terminating = true
+				//TODO send sigint to processes
 				continue
 			}
 			fmt.Println("ERROR: Aborting.")
@@ -36,6 +37,9 @@ func main() {
 
 	// proc.RunProcess(argsCmd[0], argsCmd[1:]...)
 	proc.Run(argsCmd[0], argsCmd[1:]...)
-
-	// fmt.Println(formatter.NextColor() + "asdasd" + formatter.ResetColor() + "3123" + formatter.NextColor() + "asdasd" + formatter.ResetColor())
 }
+
+//THE PLAM
+//main
+//regex process input args to commands
+//prepare commands to []exec.Cmd
