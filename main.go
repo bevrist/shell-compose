@@ -43,3 +43,33 @@ func main() {
 //main
 //regex process input args to commands
 //prepare commands to []exec.Cmd
+//prepare prefix decorators for commands
+//spawn goroutines for each instance of command
+//watch for SIGINT
+//send SIGINT to all []exec.cmd
+
+//formatter should be called "prefixer"
+
+//flags:
+//-color
+//-nocolor
+//-wrap wrap output instead of truncating to terminal width?
+//-fullcmd show full command on output
+//-namelen number of characters to show before truncating name of commands
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -20,7 +20,7 @@ func proc(cmd *exec.Cmd) {
 	go func() {
 		for {
 			if out.Len() != 0 {
-				outs := strings.Split(string(out.Next(9999)), "\n")
+				outs := strings.Split(string(out.Next(9999)), "\n") //FIXME this could probably be a .String()
 				for _, line := range outs {
 					if line == "" {
 						continue
