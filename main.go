@@ -2,12 +2,11 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
+	"os/exec"
 	"os/signal"
-	"strings"
 	"time"
-
-	"github.com/bevrist/shell-compose/proc"
 )
 
 func main() {
@@ -28,25 +27,56 @@ func main() {
 	}()
 	time.Sleep(1 * time.Second)
 
-	args := os.Args[1:]
-	argsCmd := strings.Fields(args[0])
-	//TODO find better way to handle this to handle "bash -c 'sleep 2; cat go.mod'"
-	//TODO also handle cases such as 								"bash -c \"sleep 2; cat go.mod\""
-	// cmd := exec.Command("bash", "-c", "sleep 2; cat go.mod")
-	fmt.Printf("%#v", argsCmd)
+	// args := os.Args[1:]
+	// argsCmd := strings.Fields(args[0])
+	// //TODO find better way to handle this to handle "bash -c 'sleep 2; cat go.mod'"
+	// //TODO also handle cases such as 								"bash -c \"sleep 2; cat go.mod\""
+	// // cmd := exec.Command("bash", "-c", "sleep 2; cat go.mod")
+	// // fmt.Printf("%#v", argsCmd)
 
-	// proc.RunProcess(argsCmd[0], argsCmd[1:]...)
-	proc.Run(argsCmd[0], argsCmd[1:]...)
+	//test for shell var, else try other shells
+	//TODO: flag for explicitly selecting shell
+	shell, _ := exec.LookPath(os.Getenv("SHELL"))
+	if shell == "" {
+		shells := []string{"bash", "sh", "ash", "zsh", "fish"}
+		for _, item := range shells {
+			var err error
+			shell, err = exec.LookPath(item)
+			if err == nil {
+				break
+			}
+		}
+		log.Fatal("ERROR: no shell found.") //TODO: pretty colors here
+	}
+
+	// RunCmd(argsCmd[0], argsCmd[1:]...)
+	// RunCmd(shell, "-c", "echo $TEST")
 }
 
+func testShell(toTest []string) string {
+	for _, item := range toTest {
+		shell, err := exec.LookPath(item)
+		if err != nil {
+			return shell
+		}
+	}
+	return ""
+}
+
+// func main() {
+// 	//regex process input args to commands
+
+// 	testParse()
+// 	// parseInput()
+// 	//prepare commands to []exec.Cmd
+// 	//prepare prefix decorators for commands
+// 	//spawn goroutines for each instance of command
+// 	//watch for SIGINT
+// 	//send SIGINT to all []exec.cmd
+// 	//wait for commands to exit and output status
+// }
+
 //THE PLAM
-//main
-//regex process input args to commands
-//prepare commands to []exec.Cmd
-//prepare prefix decorators for commands
-//spawn goroutines for each instance of command
-//watch for SIGINT
-//send SIGINT to all []exec.cmd
 
 //formatter should be called "prefixer"
 
@@ -56,20 +86,4 @@ func main() {
 //-wrap wrap output instead of truncating to terminal width?
 //-fullcmd show full command on output
 //-namelen number of characters to show before truncating name of commands
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+//-shell pass specific shell to run

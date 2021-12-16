@@ -1,4 +1,4 @@
-package proc
+package main
 
 import (
 	"bytes"
@@ -7,8 +7,6 @@ import (
 	"strings"
 	"syscall"
 	"time"
-
-	"github.com/bevrist/shell-compose/format"
 )
 
 func proc(cmd *exec.Cmd) {
@@ -25,7 +23,7 @@ func proc(cmd *exec.Cmd) {
 					if line == "" {
 						continue
 					}
-					fmt.Println(format.PrintCmdName("test") + line)
+					fmt.Println(PrintCmdName("test") + line)
 				}
 			}
 		}
@@ -37,10 +35,11 @@ func proc(cmd *exec.Cmd) {
 	println(cmd.ProcessState.ExitCode())
 }
 
-func Run(command string, args ...string) {
+func RunCmd(command string, args ...string) {
+	fmt.Println(command + " " + args[0])
 	cmd := exec.Command(command, args[0:]...)
 	go proc(cmd)
-	time.Sleep(2 * time.Second)
+	time.Sleep(3 * time.Second)
 	cmd.Process.Signal(syscall.SIGINT)
 	fmt.Println("SIGINT Sent to process...")
 	time.Sleep(2 * time.Second)
