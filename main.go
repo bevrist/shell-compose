@@ -49,18 +49,12 @@ func main() {
 		log.Fatal("ERROR: no shell found.") //TODO: pretty colors here
 	}
 
+	// println(shell)
 	// RunCmd(argsCmd[0], argsCmd[1:]...)
-	// RunCmd(shell, "-c", "echo $TEST")
-}
-
-func testShell(toTest []string) string {
-	for _, item := range toTest {
-		shell, err := exec.LookPath(item)
-		if err != nil {
-			return shell
-		}
-	}
-	return ""
+	// RunCmd(shell, "-c", "echo d$SHELL")
+	// fmt.Println(os.Args[1])
+	RunCmd(shell, "-c", os.Args[1])
+	// `go run . 'bash -c "echo wow"'` works with this
 }
 
 // func main() {

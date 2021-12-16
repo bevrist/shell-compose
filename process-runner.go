@@ -36,7 +36,6 @@ func proc(cmd *exec.Cmd) {
 }
 
 func RunCmd(command string, args ...string) {
-	fmt.Println(command + " " + args[0])
 	cmd := exec.Command(command, args[0:]...)
 	go proc(cmd)
 	time.Sleep(3 * time.Second)
