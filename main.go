@@ -87,3 +87,5 @@ func testShell(toTest []string) string {
 //-fullcmd show full command on output
 //-namelen number of characters to show before truncating name of commands
 //-shell pass specific shell to run
+//-about print LICENSE (embedded)
+//-help print this menu
