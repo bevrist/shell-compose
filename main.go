@@ -6,101 +6,63 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"os/signal"
+	"regexp"
 	"strings"
+	"sync"
 	"syscall"
-	"time"
 
 	"github.com/spf13/pflag"
 )
 
-// func main() {
-// 	c := make(chan os.Signal, 1)
-// 	signal.Notify(c, os.Interrupt)
-// 	go func() {
-// 		var terminating bool = false
-// 		for range c {
-// 			if !terminating {
-// 				fmt.Println("Gracefully stopping... (press Ctrl+C again to force)")
-// 				terminating = true
-// 				//TODO send sigint to processes
-// 				continue
-// 			}
-// 			fmt.Println("ERROR: Aborting.")
-// 			os.Exit(255)
-// 		}
-// 	}()
-// 	time.Sleep(1 * time.Second)
-
-// 	// args := os.Args[1:]
-// 	// argsCmd := strings.Fields(args[0])
-// 	// //TODO find better way to handle this to handle "bash -c 'sleep 2; cat go.mod'"
-// 	// //TODO also handle cases such as 								"bash -c \"sleep 2; cat go.mod\""
-// 	// // cmd := exec.Command("bash", "-c", "sleep 2; cat go.mod")
-// 	// // fmt.Printf("%#v", argsCmd)
-
-// //test for shell var, else try other shells
-// //TODO: flag for explicitly selecting shell
-// shell, _ := exec.LookPath(os.Getenv("SHELL"))
-// if shell == "" {
-// 	shells := []string{"bash", "sh", "ash", "zsh", "fish"}
-// 	for _, item := range shells {
-// 		var err error
-// 		shell, err = exec.LookPath(item)
-// 		if err == nil {
-// 			break
-// 		}
-// 	}
-// 	log.Fatal("ERROR: no shell found.") //TODO: pretty colors here
-// }
-
-// 	// println(shell)
-// 	// RunCmd(argsCmd[0], argsCmd[1:]...)
-// 	// RunCmd(shell, "-c", "echo d$SHELL")
-// 	// fmt.Println(os.Args[1])
-// 	RunCmd(shell, "-c", os.Args[1])
-// 	// `go run . 'bash -c "echo wow"'` works with this
-// }
-
-func proc(cmd *exec.Cmd) {
+func proc(cmd *exec.Cmd, title string) {
+	//format title to be consistent length
+	title = fmt.Sprintf("%-10.10s", title)
+	//regex to remove empty output
+	r := regexp.MustCompile(`^\s*$`)
+	color := NextColor()
 	var out, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &stderr
-	var err error
-	fmt.Println("starting...")
+	fmt.Println("starting..." + color + " \"" + cmd.String() + "\"" + ResetColor())
 	cmd.Start()
+	//process output
 	go func() {
 		for {
-			if out.Len() != 0 {
-				outs := strings.Split(string(out.Next(9999)), "\n") //FIXME this could probably be a .String()
+			//stdout
+			if out.Len() > 0 {
+				next := out.Next(9999)
+				var outs []string
+				if len(next) > 0 {
+					outs = strings.Split(string(next), "\n")
+				}
 				for _, line := range outs {
-					if line == "" {
+					// if line is empty or only space characters skip print
+					if r.FindStringIndex(line) != nil {
 						continue
 					}
-					fmt.Println(PrintCmdName("test") + line)
+					fmt.Println(PrintCmdName(title, color) + line)
+				}
+			}
+			//stderr
+			if stderr.Len() > 0 {
+				next := stderr.Next(9999)
+				var errs []string
+				if len(next) > 0 {
+					errs = strings.Split(string(next), "\n")
+				}
+				for _, line := range errs {
+					// if line is empty or only space characters skip print
+					if r.FindStringIndex(line) != nil {
+						continue
+					}
+					fmt.Println(PrintCmdName(title, color) + "stderr: " + line)
 				}
 			}
 		}
 	}()
-	err = cmd.Wait()
-	if err != nil {
-		println("err: " + stderr.String())
-	}
-	println(cmd.ProcessState.ExitCode())
+	cmd.Wait()
+	fmt.Println(PrintCmdName(title, color) + "Process Exited with code: " + fmt.Sprint(cmd.ProcessState.ExitCode()))
 }
-
-func RunCmd(command string, args ...string) {
-	cmd := exec.Command(command, args[0:]...)
-	go proc(cmd)
-	time.Sleep(3 * time.Second)
-	cmd.Process.Signal(syscall.SIGINT)
-	fmt.Println("SIGINT Sent to process...")
-	time.Sleep(2 * time.Second)
-}
-
-// func getCommands() []string {
-// 	for _, arg := range os.Args {
-
-// 	}
-// }
 
 func main() {
 	//input flags
@@ -128,15 +90,45 @@ func main() {
 		log.Fatal("ERROR: no shell found.") //TODO: pretty colors here
 	}
 
-	// extract commands
-	// testParse()
-	// parseInput()
-	//prepare commands to []exec.Cmd
-	//prepare prefix decorators for commands
-	//spawn goroutines for each instance of command
-	//watch for SIGINT
-	//send SIGINT to all []exec.cmd
-	//wait for commands to exit and output status
+	//make list of command objects
+	//use a subshell for each command for simplicity
+	//for each command, execute in thread
+	var wg sync.WaitGroup
+	cmds := make([]*exec.Cmd, len(pflag.Args()))
+	for i, cmdStr := range pflag.Args() {
+		cmds[i] = exec.Command(shell, "-c", cmdStr)
+		wg.Add(1)
+		cmd := cmds[i] //copy to avoid data race
+		title := cmdStr
+		go func() {
+			defer wg.Done()
+			proc(cmd, title)
+		}()
+	}
+
+	//capture and handle interrupt signal
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt)
+	go func() {
+		var terminating bool = false
+		for range c {
+			if !terminating {
+				fmt.Println("Gracefully stopping... (press Ctrl+C again to force)")
+				terminating = true
+				//send sigint to processes'
+				for _, cmd := range cmds {
+					cmd.Process.Signal(syscall.SIGINT)
+				}
+				continue
+			}
+			fmt.Println("ERROR: Aborting.") //TODO: pretty colors here
+			os.Exit(255)
+		}
+	}()
+
+	//wait for all commands to exit and output status
+	wg.Wait()
+	fmt.Println("Done.")
 }
 
 //THE PLAM
@@ -149,3 +141,4 @@ func main() {
 //-namelen number of characters to show before truncating name of commands
 //-about print LICENSE (embedded)
 //-help print this menu
+//-restart restart commands after exiting
