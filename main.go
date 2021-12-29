@@ -14,24 +14,27 @@ import (
 	"github.com/spf13/pflag"
 )
 
+//proc handles output and lifecycle of commands
 func proc(cmd *exec.Cmd, title string, color string) {
 	//format title to be consistent length
-	title = fmt.Sprintf("%-10.10s", title)
-	//regex to remove empty output
-	r := regexp.MustCompile(`^\s*$`)
+	tlen := "5"
+	tfmt := "%-" + tlen + "." + tlen + "s"
+	title = fmt.Sprintf(tfmt, title) //TODO: make this more complicated and prettier
+	//capture command output streams and start command
 	stdout, _ := cmd.StdoutPipe()
 	stderr, _ := cmd.StderrPipe()
+	outReader := bufio.NewReader(stdout)
+	errReader := bufio.NewReader(stderr)
 	fmt.Println("starting..." + color + " \"" + cmd.String() + "\"" + ResetColor())
 	cmd.Start()
-	//process output
+	//process and print command output as it arrives
 	go func() {
-		outReader := bufio.NewReader(stdout)
-		errReader := bufio.NewReader(stderr)
 		for {
 			//stdout
 			outline, err := outReader.ReadString('\n')
 			for err == nil {
-				if r.FindStringIndex(outline) != nil {
+				//skip printing empty lines
+				if reEmpty.FindStringIndex(outline) != nil {
 					continue
 				}
 				fmt.Print(PrintCmdName(title, color) + outline)
@@ -41,7 +44,8 @@ func proc(cmd *exec.Cmd, title string, color string) {
 			//stderr
 			errline, err := errReader.ReadString('\n')
 			for err == nil {
-				if r.FindStringIndex(errline) != nil {
+				//skip printing empty lines
+				if reEmpty.FindStringIndex(errline) != nil {
 					continue
 				}
 				fmt.Print(PrintCmdName(title, color) + "stderr: " + errline) //TODO error color this
@@ -49,15 +53,22 @@ func proc(cmd *exec.Cmd, title string, color string) {
 			}
 		}
 	}()
+	//keep goroutine running as long as command is running
 	cmd.Wait()
 	fmt.Println(PrintCmdName(title, color) + "Process Exited with code: " + fmt.Sprint(cmd.ProcessState.ExitCode()))
 }
 
+var (
+	//arg flags
+	fColor   = pflag.BoolP("color", "c", false, "enable color for output")
+	fNoColor = pflag.BoolP("nocolor", "n", false, "disable color for output")
+	fRestart = pflag.BoolP("restart", "r", false, "restart commands after failure (non zero exit code)")
+	fShell   = pflag.StringP("shell", "s", "", "shell binary to launch commands with")
+	//regex to capture all empty lines
+	reEmpty = regexp.MustCompile(`^\s*$`)
+)
+
 func main() {
-	//input flags
-	// fColor := pflag.BoolP("color", "c", false, "enable color for output")
-	// fNoColor := pflag.BoolP("nocolor", "n", false, "disable color for output")
-	fShell := pflag.StringP("shell", "s", "", "shell binary to launch commands with")
 	pflag.Parse()
 
 	//test for shell var, else try other shells
@@ -81,14 +92,14 @@ func main() {
 
 	//make list of command objects
 	//use a subshell for each command for simplicity
-	//for each command, execute in thread
+	//execute and handle each command in own thread
 	var wg sync.WaitGroup
 	cmds := make([]*exec.Cmd, len(pflag.Args()))
 	for i, cmdStr := range pflag.Args() {
 		cmds[i] = exec.Command(shell, "-c", cmdStr)
 		wg.Add(1)
 		cmd := cmds[i] //copy to avoid data race
-		title := cmdStr
+		title := "cmd " + fmt.Sprint(i+1)
 		color := NextColor()
 		go func() {
 			defer wg.Done()
@@ -103,7 +114,7 @@ func main() {
 		var terminating bool = false
 		for range c {
 			if !terminating {
-				fmt.Println("Gracefully stopping... (press Ctrl+C again to force)")
+				fmt.Println("Gracefully stopping... (press Ctrl+C again to force)") //TODO: pretty colors here
 				terminating = true
 				//send sigint to processes'
 				for _, cmd := range cmds {
