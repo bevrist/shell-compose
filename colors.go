@@ -24,10 +24,12 @@ func istty() bool {
 	return false
 }
 
-// return true if should be color
+// return true if output should be colored
 func checkColor() bool {
-	//TODO add command line flag for colors
-	if istty() {
+	if *fNoColor {
+		return false
+	}
+	if istty() || *fColor {
 		return true
 	}
 	return false

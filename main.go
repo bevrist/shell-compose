@@ -10,6 +10,9 @@ import (
 	"regexp"
 	"sync"
 	"syscall"
+	"time"
+
+	_ "embed"
 
 	"github.com/spf13/pflag"
 )
@@ -25,60 +28,78 @@ func proc(cmd *exec.Cmd, title string, color string) {
 	stderr, _ := cmd.StderrPipe()
 	outReader := bufio.NewReader(stdout)
 	errReader := bufio.NewReader(stderr)
-	fmt.Println("starting..." + color + " \"" + cmd.String() + "\"" + ResetColor())
-	cmd.Start()
-	//process and print command output as it arrives
-	go func() {
-		for {
-			//stdout
-			outline, err := outReader.ReadString('\n')
-			for err == nil {
-				//skip printing empty lines
-				if reEmpty.FindStringIndex(outline) != nil {
-					continue
+	for {
+		fmt.Println("starting..." + color + " \"" + cmd.String() + "\"" + ResetColor())
+		cmd.Start()
+		//process and print command output as it arrives
+		go func() {
+			for {
+				//stdout
+				outline, err := outReader.ReadString('\n')
+				for err == nil {
+					//skip printing empty lines
+					if reEmpty.FindStringIndex(outline) != nil {
+						continue
+					}
+					fmt.Print(PrintCmdName(title, color) + outline)
+					outline, err = outReader.ReadString('\n')
 				}
-				fmt.Print(PrintCmdName(title, color) + outline)
-				outline, err = outReader.ReadString('\n')
-			}
 
-			//stderr
-			errline, err := errReader.ReadString('\n')
-			for err == nil {
-				//skip printing empty lines
-				if reEmpty.FindStringIndex(errline) != nil {
-					continue
+				//stderr
+				errline, err := errReader.ReadString('\n')
+				for err == nil {
+					//skip printing empty lines
+					if reEmpty.FindStringIndex(errline) != nil {
+						continue
+					}
+					fmt.Print(PrintCmdName(title, color) + "stderr: " + errline) //TODO error color this
+					errline, err = outReader.ReadString('\n')
 				}
-				fmt.Print(PrintCmdName(title, color) + "stderr: " + errline) //TODO error color this
-				errline, err = outReader.ReadString('\n')
 			}
+		}()
+		//keep goroutine running as long as command is running
+		cmd.Wait()
+		exitCode := cmd.ProcessState.ExitCode()
+		fmt.Println(PrintCmdName(title, color) + "Process Exited with code: " + fmt.Sprint(exitCode))
+		time.Sleep(time.Second)
+		if !*fRestart || exitCode == 0 {
+			return
 		}
-	}()
-	//keep goroutine running as long as command is running
-	cmd.Wait()
-	fmt.Println(PrintCmdName(title, color) + "Process Exited with code: " + fmt.Sprint(cmd.ProcessState.ExitCode()))
+	}
 }
 
 var (
 	//arg flags
-	fColor   = pflag.BoolP("color", "c", false, "enable color for output")
-	fNoColor = pflag.BoolP("nocolor", "n", false, "disable color for output")
+	fShell   = pflag.StringP("shell", "s", "", "shell to launch commands with")
 	fRestart = pflag.BoolP("restart", "r", false, "restart commands after failure (non zero exit code)")
-	fShell   = pflag.StringP("shell", "s", "", "shell binary to launch commands with")
-	//regex to capture all empty lines
+	fColor   = pflag.BoolP("color", "c", false, "force color output")
+	fNoColor = pflag.BoolP("nocolor", "n", false, "disable color output")
+	fLicense = pflag.Bool("license", false, "print the license")
+	//regex to capture all empty strings
 	reEmpty = regexp.MustCompile(`^\s*$`)
+
+	//go:embed LICENSE
+	license string
 )
 
 func main() {
 	pflag.Parse()
 
-	//test for shell var, else try other shells
-	var shell string
-	if *fShell != "" {
-		shell, _ = exec.LookPath(*fShell)
-	} else {
-		shell, _ = exec.LookPath(os.Getenv("SHELL"))
+	//print license
+	if *fLicense {
+		print(license)
+		return
 	}
-	if shell == "" {
+
+	//get shell to launch commands with
+	var shell string
+	//if shell provided with flag, verify binary can be found
+	if *fShell != "" {
+		if shell, _ = exec.LookPath(*fShell); shell == "" {
+			log.Fatal("ERROR: '" + *fShell + "'shell binary not found.") //TODO: pretty colors here
+		}
+	} else if shell, _ = exec.LookPath(os.Getenv("SHELL")); shell == "" {
+		//test for shell var, else try other potential shells
 		shells := []string{"bash", "sh", "zsh", "ash", "fish"}
 		for _, item := range shells {
 			var err error
@@ -87,7 +108,10 @@ func main() {
 				break
 			}
 		}
-		log.Fatal("ERROR: no shell found.") //TODO: pretty colors here
+		//err out if no shell is found after all checks
+		if shell == "" {
+			log.Fatal("ERROR: no shell found.") //TODO: pretty colors here
+		}
 	}
 
 	//make list of command objects
@@ -116,6 +140,7 @@ func main() {
 			if !terminating {
 				fmt.Println("Gracefully stopping... (press Ctrl+C again to force)") //TODO: pretty colors here
 				terminating = true
+				*fRestart = false //stop restarting processes
 				//send sigint to processes'
 				for _, cmd := range cmds {
 					cmd.Process.Signal(syscall.SIGINT)
@@ -141,5 +166,3 @@ func main() {
 //-fullcmd show full command on output
 //-namelen number of characters to show before truncating name of commands
 //-about print LICENSE (embedded)
-//-help print this menu
-//-restart restart commands after exiting
