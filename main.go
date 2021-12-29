@@ -1,62 +1,51 @@
 package main
 
 import (
-	"bytes"
+	"bufio"
 	"fmt"
 	"log"
 	"os"
 	"os/exec"
 	"os/signal"
 	"regexp"
-	"strings"
 	"sync"
 	"syscall"
 
 	"github.com/spf13/pflag"
 )
 
-func proc(cmd *exec.Cmd, title string) {
+func proc(cmd *exec.Cmd, title string, color string) {
 	//format title to be consistent length
 	title = fmt.Sprintf("%-10.10s", title)
 	//regex to remove empty output
 	r := regexp.MustCompile(`^\s*$`)
-	color := NextColor()
-	var out, stderr bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &out, &stderr
+	stdout, _ := cmd.StdoutPipe()
+	stderr, _ := cmd.StderrPipe()
 	fmt.Println("starting..." + color + " \"" + cmd.String() + "\"" + ResetColor())
 	cmd.Start()
 	//process output
 	go func() {
+		outReader := bufio.NewReader(stdout)
+		errReader := bufio.NewReader(stderr)
 		for {
 			//stdout
-			if out.Len() > 0 {
-				next := out.Next(9999)
-				var outs []string
-				if len(next) > 0 {
-					outs = strings.Split(string(next), "\n")
+			outline, err := outReader.ReadString('\n')
+			for err == nil {
+				if r.FindStringIndex(outline) != nil {
+					continue
 				}
-				for _, line := range outs {
-					// if line is empty or only space characters skip print
-					if r.FindStringIndex(line) != nil {
-						continue
-					}
-					fmt.Println(PrintCmdName(title, color) + line)
-				}
+				fmt.Print(PrintCmdName(title, color) + outline)
+				outline, err = outReader.ReadString('\n')
 			}
+
 			//stderr
-			if stderr.Len() > 0 {
-				next := stderr.Next(9999)
-				var errs []string
-				if len(next) > 0 {
-					errs = strings.Split(string(next), "\n")
+			errline, err := errReader.ReadString('\n')
+			for err == nil {
+				if r.FindStringIndex(errline) != nil {
+					continue
 				}
-				for _, line := range errs {
-					// if line is empty or only space characters skip print
-					if r.FindStringIndex(line) != nil {
-						continue
-					}
-					fmt.Println(PrintCmdName(title, color) + "stderr: " + line)
-				}
+				fmt.Print(PrintCmdName(title, color) + "stderr: " + errline) //TODO error color this
+				errline, err = outReader.ReadString('\n')
 			}
 		}
 	}()
@@ -100,9 +89,10 @@ func main() {
 		wg.Add(1)
 		cmd := cmds[i] //copy to avoid data race
 		title := cmdStr
+		color := NextColor()
 		go func() {
 			defer wg.Done()
-			proc(cmd, title)
+			proc(cmd, title, color)
 		}()
 	}
 
