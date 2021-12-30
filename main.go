@@ -62,7 +62,7 @@ func proc(cmd *exec.Cmd, title string, color string) {
 					if reEmpty.FindStringIndex(errline) != nil {
 						continue
 					}
-					fmt.Print(printCmdName(title, color) + "stderr: " + errline) //TODO error color this
+					fmt.Print(printCmdName(title, color) + ErrorColor() + "stderr: " + ResetColor() + errline)
 					errline, err = outReader.ReadString('\n')
 				}
 			}
@@ -140,10 +140,11 @@ func init() {
 func main() {
 	//get shell to launch commands with
 	var shell string
+
 	//if shell provided with flag, verify binary can be found
 	if *fShell != "" {
 		if shell, _ = exec.LookPath(*fShell); shell == "" {
-			log.Fatal("ERROR: '" + *fShell + "' shell binary not found.") //TODO: pretty colors here
+			log.Fatal(ErrorColor() + "ERROR:" + ResetColor() + " '" + *fShell + "' shell binary not found.")
 		}
 	} else if shell, _ = exec.LookPath(os.Getenv("SHELL")); shell == "" {
 		//test for shell var, else try other potential shells
@@ -157,7 +158,7 @@ func main() {
 		}
 		//err out if no shell is found after all checks
 		if shell == "" {
-			log.Fatal("ERROR: no shell found.") //TODO: pretty colors here
+			log.Fatal(ErrorColor() + "ERROR:" + ResetColor() + " no shell found.")
 		}
 	}
 
@@ -185,7 +186,7 @@ func main() {
 		var terminating bool = false
 		for range c {
 			if !terminating {
-				fmt.Println("Gracefully stopping... (press Ctrl+C again to force)") //TODO: pretty colors here
+				fmt.Println(SuccessColor() + "Gracefully stopping..." + ResetColor() + " (press Ctrl+C again to force)")
 				terminating = true
 				*fRestart = false //stop restarting processes
 				//send sigint to processes'
@@ -194,7 +195,7 @@ func main() {
 				}
 				continue
 			}
-			fmt.Println("ERROR: Aborting.") //TODO: pretty colors here
+			fmt.Println(ErrorColor() + "ERROR:" + ResetColor() + " Aborting.")
 			os.Exit(255)
 		}
 	}()

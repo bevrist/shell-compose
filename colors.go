@@ -61,3 +61,11 @@ func ErrorColor() string {
 	}
 	return ""
 }
+
+//SuccessColor returns an success color
+func SuccessColor() string {
+	if checkColor() {
+		return "\033[32m" //green
+	}
+	return ""
+}
