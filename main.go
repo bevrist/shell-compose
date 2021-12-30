@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -17,18 +18,27 @@ import (
 	"github.com/spf13/pflag"
 )
 
+//printCmdName outputs truncated command name in color
+func printCmdName(commandTitle string, color string) string {
+	return color + commandTitle + " | " + ResetColor()
+}
+
+// func formatTitle(title string) {
+
+// }
+
 //proc handles output and lifecycle of commands
 func proc(cmd *exec.Cmd, title string, color string) {
-	//format title to be consistent length
-	tlen := "5"
-	tfmt := "%-" + tlen + "." + tlen + "s"
-	title = fmt.Sprintf(tfmt, title) //TODO: make this more complicated and prettier
-	//capture command output streams and start command
-	stdout, _ := cmd.StdoutPipe()
-	stderr, _ := cmd.StderrPipe()
-	outReader := bufio.NewReader(stdout)
-	errReader := bufio.NewReader(stderr)
 	for {
+		//format title to be consistent length
+		tlen := "5"
+		tfmt := "%-" + tlen + "." + tlen + "s"
+		title = fmt.Sprintf(tfmt, title) //TODO: make this more complicated and prettier
+		//capture command output streams and start command
+		stdout, _ := cmd.StdoutPipe()
+		stderr, _ := cmd.StderrPipe()
+		outReader := bufio.NewReader(stdout)
+		errReader := bufio.NewReader(stderr)
 		fmt.Println("starting..." + color + " \"" + cmd.String() + "\"" + ResetColor())
 		cmd.Start()
 		//process and print command output as it arrives
@@ -41,7 +51,7 @@ func proc(cmd *exec.Cmd, title string, color string) {
 					if reEmpty.FindStringIndex(outline) != nil {
 						continue
 					}
-					fmt.Print(PrintCmdName(title, color) + outline)
+					fmt.Print(printCmdName(title, color) + outline)
 					outline, err = outReader.ReadString('\n')
 				}
 
@@ -52,7 +62,7 @@ func proc(cmd *exec.Cmd, title string, color string) {
 					if reEmpty.FindStringIndex(errline) != nil {
 						continue
 					}
-					fmt.Print(PrintCmdName(title, color) + "stderr: " + errline) //TODO error color this
+					fmt.Print(printCmdName(title, color) + "stderr: " + errline) //TODO error color this
 					errline, err = outReader.ReadString('\n')
 				}
 			}
@@ -60,7 +70,7 @@ func proc(cmd *exec.Cmd, title string, color string) {
 		//keep goroutine running as long as command is running
 		cmd.Wait()
 		exitCode := cmd.ProcessState.ExitCode()
-		fmt.Println(PrintCmdName(title, color) + "Process Exited with code: " + fmt.Sprint(exitCode))
+		fmt.Println(printCmdName(title, color) + "Process Exited with code: " + fmt.Sprint(exitCode))
 		time.Sleep(time.Second)
 		if !*fRestart || exitCode == 0 {
 			return
@@ -70,33 +80,70 @@ func proc(cmd *exec.Cmd, title string, color string) {
 
 var (
 	//arg flags
+	fHelp    = pflag.Bool("help", false, "show this help menu and exit")
+	fVersion = pflag.BoolP("version", "v", false, "show version information and exit")
 	fShell   = pflag.StringP("shell", "s", "", "shell to launch commands with")
 	fRestart = pflag.BoolP("restart", "r", false, "restart commands after failure (non zero exit code)")
-	fColor   = pflag.BoolP("color", "c", false, "force color output")
-	fNoColor = pflag.BoolP("nocolor", "n", false, "disable color output")
+	fColor   = pflag.Bool("color", false, "force color output")
+	fNoColor = pflag.Bool("nocolor", false, "disable color output")
 	fLicense = pflag.Bool("license", false, "print the license")
+	tmpLen   = 10
+	fNameLen = pflag.IntP("name-length", "n", tmpLen, "max number of characters to show before truncating name of commands")
+	nameLen  = *fNameLen
+
 	//regex to capture all empty strings
 	reEmpty = regexp.MustCompile(`^\s*$`)
+
+	//Semantic Version Info
+	Version   string = "development"
+	GitCommit string
+	BuildDate string
 
 	//go:embed LICENSE
 	license string
 )
 
-func main() {
+func init() {
+	//update flags and help menu
+	pflag.ErrHelp = errors.New("")
+	pflag.Usage = func() {
+		fmt.Fprintln(os.Stderr, "Usage of "+os.Args[0])
+		fmt.Fprintln(os.Stderr, " shell-compose: run and view output of multiple commands at once")
+		fmt.Fprintf(os.Stderr, "\n")
+		pflag.PrintDefaults()
+		fmt.Fprintf(os.Stderr, "\n")
+		fmt.Fprintln(os.Stderr, "Written by @bevrist")
+		fmt.Fprintln(os.Stderr, "https://github.com/bevrist")
+		os.Exit(0)
+	}
 	pflag.Parse()
 
 	//print license
 	if *fLicense {
-		print(license)
-		return
+		fmt.Println(license)
+		os.Exit(0)
 	}
 
+	// print version
+	if *fVersion {
+		fmt.Printf("Version: %s \nGit Commit: %s \nBuild Date: %s\n", Version, GitCommit, BuildDate)
+		os.Exit(0)
+	}
+
+	//print help
+	if *fHelp || len(pflag.Args()) < 1 {
+		pflag.Usage()
+		os.Exit(0)
+	}
+}
+
+func main() {
 	//get shell to launch commands with
 	var shell string
 	//if shell provided with flag, verify binary can be found
 	if *fShell != "" {
 		if shell, _ = exec.LookPath(*fShell); shell == "" {
-			log.Fatal("ERROR: '" + *fShell + "'shell binary not found.") //TODO: pretty colors here
+			log.Fatal("ERROR: '" + *fShell + "' shell binary not found.") //TODO: pretty colors here
 		}
 	} else if shell, _ = exec.LookPath(os.Getenv("SHELL")); shell == "" {
 		//test for shell var, else try other potential shells
@@ -156,13 +203,3 @@ func main() {
 	wg.Wait()
 	fmt.Println("Done.")
 }
-
-//THE PLAM
-
-//formatter should be called "prefixer"
-
-//flags:
-//-wrap wrap output instead of truncating to terminal width?
-//-fullcmd show full command on output
-//-namelen number of characters to show before truncating name of commands
-//-about print LICENSE (embedded)
