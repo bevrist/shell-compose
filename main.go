@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -18,27 +17,55 @@ import (
 	"github.com/spf13/pflag"
 )
 
+var (
+	//arg flags
+	fColor   = pflag.Bool("color", false, "force color output")
+	fHelp    = pflag.Bool("help", false, "show this help menu and exit")
+	fLicense = pflag.Bool("license", false, "print the license")
+	fNameLen = pflag.IntP("name-length", "n", 20, "max number of characters to show before truncating name of commands")
+	fNoColor = pflag.Bool("nocolor", false, "disable color output")
+	fRestart = pflag.BoolP("restart", "r", false, "restart commands after failure (non zero exit code)")
+	fShell   = pflag.StringP("shell", "s", "", "shell to launch commands with")
+	fVersion = pflag.BoolP("version", "v", false, "show version information and exit")
+
+	//regex to capture all empty strings
+	reEmpty = regexp.MustCompile(`^\s*$`)
+
+	//Semantic Version Info
+	Version, GitCommit, BuildDate string = "development", "null", "null"
+
+	//go:embed LICENSE
+	license string
+)
+
 //printCmdName outputs truncated command name in color
 func printCmdName(commandTitle string, color string) string {
 	return color + commandTitle + " | " + ResetColor()
 }
 
-// func formatTitle(title string) {
+//formatTitle creates string with padding for specific length and truncates if necessary
+func formatTitle(title string, titleLen int) string {
+	//truncate if title is too long
+	if len(title) > titleLen {
+		title = title[:titleLen-1]
+		title += "…"
+	}
 
-// }
+	//format output with padding if necessary
+	tlen := fmt.Sprint(titleLen)
+	tfmt := "%-" + tlen + "." + tlen + "s"
+	return fmt.Sprintf(tfmt, title)
+}
 
-//proc handles output and lifecycle of commands
-func proc(cmd *exec.Cmd, title string, color string) {
+//runProcess handles output and lifecycle of commands
+func runProcess(cmd *exec.Cmd, title string, color string) {
+	//capture command output streams
+	stdout, _ := cmd.StdoutPipe()
+	stderr, _ := cmd.StderrPipe()
+	outReader := bufio.NewReader(stdout)
+	errReader := bufio.NewReader(stderr)
+	//loop when restart flag is enabled
 	for {
-		//format title to be consistent length
-		tlen := "5"
-		tfmt := "%-" + tlen + "." + tlen + "s"
-		title = fmt.Sprintf(tfmt, title) //TODO: make this more complicated and prettier
-		//capture command output streams and start command
-		stdout, _ := cmd.StdoutPipe()
-		stderr, _ := cmd.StderrPipe()
-		outReader := bufio.NewReader(stdout)
-		errReader := bufio.NewReader(stderr)
 		fmt.Println("starting..." + color + " \"" + cmd.String() + "\"" + ResetColor())
 		cmd.Start()
 		//process and print command output as it arrives
@@ -62,7 +89,7 @@ func proc(cmd *exec.Cmd, title string, color string) {
 					if reEmpty.FindStringIndex(errline) != nil {
 						continue
 					}
-					fmt.Print(printCmdName(title, color) + ErrorColor() + "stderr: " + ResetColor() + errline)
+					fmt.Print(printCmdName(title, color) + ErrorColor() + "STDERR: " + ResetColor() + errline)
 					errline, err = outReader.ReadString('\n')
 				}
 			}
@@ -71,6 +98,7 @@ func proc(cmd *exec.Cmd, title string, color string) {
 		cmd.Wait()
 		exitCode := cmd.ProcessState.ExitCode()
 		fmt.Println(printCmdName(title, color) + "Process Exited with code: " + fmt.Sprint(exitCode))
+		// delay before restarting command
 		time.Sleep(time.Second)
 		if !*fRestart || exitCode == 0 {
 			return
@@ -78,34 +106,8 @@ func proc(cmd *exec.Cmd, title string, color string) {
 	}
 }
 
-var (
-	//arg flags
-	fHelp    = pflag.Bool("help", false, "show this help menu and exit")
-	fVersion = pflag.BoolP("version", "v", false, "show version information and exit")
-	fShell   = pflag.StringP("shell", "s", "", "shell to launch commands with")
-	fRestart = pflag.BoolP("restart", "r", false, "restart commands after failure (non zero exit code)")
-	fColor   = pflag.Bool("color", false, "force color output")
-	fNoColor = pflag.Bool("nocolor", false, "disable color output")
-	fLicense = pflag.Bool("license", false, "print the license")
-	tmpLen   = 10
-	fNameLen = pflag.IntP("name-length", "n", tmpLen, "max number of characters to show before truncating name of commands")
-	nameLen  = *fNameLen
-
-	//regex to capture all empty strings
-	reEmpty = regexp.MustCompile(`^\s*$`)
-
-	//Semantic Version Info
-	Version   string = "development"
-	GitCommit string
-	BuildDate string
-
-	//go:embed LICENSE
-	license string
-)
-
 func init() {
 	//update flags and help menu
-	pflag.ErrHelp = errors.New("")
 	pflag.Usage = func() {
 		fmt.Fprintln(os.Stderr, "Usage of "+os.Args[0])
 		fmt.Fprintln(os.Stderr, " shell-compose: run and view output of multiple commands at once")
@@ -162,6 +164,18 @@ func main() {
 		}
 	}
 
+	//calculate max title length
+	var nameLen int
+	for _, cmd := range pflag.Args() {
+		if len(cmd) > nameLen {
+			nameLen = len(cmd)
+		}
+	}
+	//do not allow titles longer than max length
+	if nameLen > *fNameLen {
+		nameLen = *fNameLen
+	}
+
 	//make list of command objects
 	//use a subshell for each command for simplicity
 	//execute and handle each command in own thread
@@ -171,11 +185,12 @@ func main() {
 		cmds[i] = exec.Command(shell, "-c", cmdStr)
 		wg.Add(1)
 		cmd := cmds[i] //copy to avoid data race
-		title := "cmd " + fmt.Sprint(i+1)
+		//format title to be consistent length with others
+		title := formatTitle(cmdStr, nameLen)
 		color := NextColor()
 		go func() {
 			defer wg.Done()
-			proc(cmd, title, color)
+			runProcess(cmd, title, color)
 		}()
 	}
 
