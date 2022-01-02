@@ -46,7 +46,7 @@ func NextColor() string {
 	return "" //return no formatting if not tty or color flag disabled
 }
 
-//ResetColor returns color reset code (based on tty or by flag)
+//ResetColor returns color reset code
 func ResetColor() string {
 	if checkColor() {
 		return "\033[0m"
